@@ -23,6 +23,8 @@ Just run 'PoissonFilterGUI.m'
 % PoissonFilterGUI
 ```
 
+Then, please check "Range Constraint".
+
 ## Requirement
 
 Image processing tool box.

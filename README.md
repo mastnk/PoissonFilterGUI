@@ -23,7 +23,7 @@ Just run 'PoissonFilterGUI.m'
 % PoissonFilterGUI
 ```
 
-Then, please check "Range Constraint".
+Then, please check "Range Constraint" and push "Swhich Image" until you can see "Pro2 W".
 
 ## Requirement
 

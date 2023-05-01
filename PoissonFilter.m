@@ -1,4 +1,4 @@
-function [dst, Param] = PoissonFilter(src, gsig, gamp, glpf, ith, iamp, median, black, ep, Param)
+function [dst, Param, dx, dy, dstGry, lpfGry, ker, crm] = PoissonFilter(src, gsig, gamp, glpf, ith, iamp, median, black, ep, rho, Param)
 
 s = size(src);
 
@@ -18,6 +18,11 @@ if ~exist('median', 'var') || isempty(median)
 	median = 0;
 end
 
+if ~exist('rho', 'var') || isempty(rho)
+	rho = 1;
+end
+
+
 if ~exist('Param', 'var') || isempty(Param)
  Param = buildModPoissonParam(s);
 else
@@ -27,33 +32,29 @@ else
  end
 end
 
-src = src+1;
+gryBias = 1;
 
 if( numel(s) >= 3 )
- if( s(3) == 3 )
-  gry = 0.299 * src(:,:,1) + 0.587 * src(:,:,2) + 0.114 * src(:,:,3);
- else
-  gry = src(:,:,1);
- end
+    gry = max(src,[],3);
 else
- gry = src;
+    gry = src;
 end
+
 
 dst = zeros(size(src));
 
-crm = bsxfun(@rdivide, src, gry );
+crm = bsxfun(@rdivide, src, gry+gryBias );
+crm = crm .^ rho;
 
 if( glpf > 0 )
- h = fspecial('gaussian', 2*floor(glpf*2.5)+1, glpf);
- lpfGry = imfilter( gry, h, 'replicate');
- refGry = gry - lpfGry;
- if( black > 0 )
-  lpfGry = ( 255 - black ) / 255 * lpfGry + black;
- end
+ ker = fspecial('gaussian', 2*floor(glpf*2.5)+1, glpf);
+ lpfGry = imfilter( gry, ker, 'replicate');
 else
- lpfGry = black;
- refGry = gry; 
+ ker = [];
+ lpfGry = gry;
 end
+
+refGry = gry;
 
 KDx = [ 0,-1, 1 ];
 KDy = [ 0;-1; 1 ];
@@ -62,8 +63,8 @@ KAy = [ 0; 1/2; 1/2 ];
 
 gryDx = imfilter(refGry,KDx,'replicate');
 gryDy = imfilter(refGry,KDy,'replicate');
-gryAx = imfilter(gry,KAx,'replicate');
-gryAy = imfilter(gry,KAy,'replicate');
+gryAx = imfilter(lpfGry,KAx,'replicate');
+gryAy = imfilter(lpfGry,KAy,'replicate');
 
 if( median > 0 )
  gryDx = gradXMedian( gryDx, median );
@@ -75,17 +76,24 @@ end
 gIX = calcIgain(gryAx,ith,iamp);
 gIY = calcIgain(gryAy,ith,iamp);
 
-gGX = calcGgain(gryDx,gsig,gamp);
-gGY = calcGgain(gryDy,gsig,gamp);
+dx = gryDx .* gIX;
+dy = gryDy .* gIY;
 
-GX = gGX .* gIX;
-GY = gGY .* gIY;
- 
-dx = gryDx .* GX;
-dy = gryDy .* GY;
- 
-dstGry = dxdy2img( dx, dy, refGry, Param, ep ) + lpfGry;
+gGX = calcGgain(dx,gsig,gamp);
+gGY = calcGgain(dy,gsig,gamp);
+
+dx = dx .* gGX;
+dy = dy .* gGY;
+
+if( black ~= 0 )
+ lpfGry = lpfGry * ( ( 255.0 - black ) / 255.0 ) + black;
+end
+
+if( glpf > 0 )
+ dstGry = dxdy2imgLPF( dx, dy, lpfGry, Param, ep, ker );
+else
+ dstGry = dxdy2img( dx, dy, lpfGry, Param, ep );
+end
 
 dst = bsxfun(@times, crm, dstGry);
 
-dst = dst - 1;

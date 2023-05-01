@@ -35,7 +35,7 @@ Image processing tool box.
 
 [Author's matlab file exchange](https://www.mathworks.com/matlabcentral/profile/authors/3502213)
 
-[Research Project Page](http://www.ok.sc.e.titech.ac.jp/res/IC/ImReconProx/)
+[Research Page](http://www.ok.sc.e.titech.ac.jp/res/IC/)
 
 ## License
 

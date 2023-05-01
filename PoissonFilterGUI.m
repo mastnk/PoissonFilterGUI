@@ -22,7 +22,7 @@ function varargout = PoissonFilterGUI(varargin)
 
 % Edit the above text to modify the response to help PoissonFilterGUI
 
-% Last Modified by GUIDE v2.5 27-Jan-2017 14:48:41
+% Last Modified by GUIDE v2.5 27-May-2017 13:04:08
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -74,11 +74,14 @@ global gx;
 global gsig;
 global gamp;
 global glpf;
+global gsaturation;
+
 gx = [0:30] / 30.0 * 10;
 gsig = 0;
 gamp = 1;
 drawGraphG(handles, gx, gsig, gamp );
 glpf = 0;
+gsaturation = 1;
 
 global ix;
 global ith;
@@ -90,6 +93,9 @@ drawGraphI(handles, ix, ith, iamp );
 
 global ep;
 ep = 1E-8;
+
+global viewMode;
+viewMode = 1;
 
 
 % --- Outputs from this function are returned to the command line.
@@ -120,6 +126,14 @@ global isProcessed;
 if( filename ~=0 )
     org = imread([dirpath,filename]);
 
+    if( ndims(org) == 2 )
+      org = cat( 3, org, org, org );
+    end
+    
+    if( isa( org, 'uint16' ) )
+        org = double(org) / 256;
+    end
+    
     isProcessed = 0;
     s = size(org);
     if( s(1) * 4 > s(2) * 3 ) 
@@ -161,6 +175,8 @@ global ep;
 global BlackL;
 global median;
 global isProcessed;
+global gsaturation;
+global gbeta;
 
 while( isProcessed > 0 )
 end
@@ -168,13 +184,22 @@ end
 if( filename ~= 0 )
     isProcessed = 1;
     set(handles.textProcess,'Visible','on');
+    pause(0.0);
 
+%    rcn = PoissonFilter(double(org), gsig, gamp, glpf, ith, iamp, median, BlackL, ep );
 
-    rcn = PoissonFilter(double(org), gsig, gamp, glpf, ith, iamp, median, BlackL, ep );
+    [rcn, Param, dx, dy, dstGry, lpfGry, ker, crm] = PoissonFilter(double(org), gsig, gamp, glpf, ith, iamp, median, BlackL, ep, gsaturation );
+    rcn2 = dxdy2imgMinMax( dx, dy, dstGry, lpfGry, ker, ep, gbeta, crm );
 
-    imwrite(uint8(rcn),[dirpath,filename]);
+    global viewMode;
+    if( viewMode == 2 )
+        imwrite(uint8(rcn2),[dirpath,filename]);
+    else
+        imwrite(uint8(rcn),[dirpath,filename]);
+    end
 
     set(handles.textProcess,'Visible','off');
+    pause(0.0);
     isProcessed = 0;
 end
 
@@ -487,21 +512,35 @@ function togglebuttonOrg_Callback(hObject, eventdata, handles)
 % Hint: get(hObject,'Value') returns toggle state of togglebuttonOrg
 global img;
 global rcn;
+global rcn2;
 global isProcessed;
+global viewMode;
 
-tog = get(hObject,'Value');
-if( tog == 0 )
-    str = 'Processed';
-else
+viewMode = viewMode + 1;
+
+strangeConstraintate = get(handles.checkRangeConstraint,'Value');
+if( viewMode > 1 + strangeConstraintate )
+    viewMode = 0;
+end
+
+if( viewMode == 0 )
     str = 'Original';
+elseif( viewMode == 1 )
+    str = 'Pro1 W/O';
+elseif( viewMode == 2 )
+    str = 'Pro2 W';
+else
+    str = 'ERROR';
 end
 
 set(handles.textImageTitle,'String',str);
 
 if(isProcessed >=0 )
     axes(handles.axes1);
-    if( tog == 0 )
+    if( viewMode == 1 )
         imshow(uint8(rcn));
+    elseif(viewMode == 2 )
+        imshow(uint8(rcn2));
     else
         imshow(uint8(img));
     end
@@ -531,6 +570,17 @@ global glpf;
 glpf = 0.0; %LPF
 set(handles.sliderGlpf,'Value',glpf);
 set(handles.editGlpf,'String',sprintf('%5.2f',glpf));
+
+global gsaturation;
+gsaturation = 1.0;
+set(handles.sliderSaturation,'Value', gsaturation);
+set(handles.editSaturation,'String',sprintf('%4.2f', gsaturation));
+
+global gbeta;
+gbeta = 1.0;
+set(handles.sliderBeta,'Value', gbeta);
+set(handles.editBeta,'String',sprintf('%4.2f', gbeta));
+
 
 global ix;
 global ith;
@@ -702,6 +752,8 @@ function performDraw(handles)
 global isProcessed;
 global Param;
 global rcn;
+global rcn2;
+global viewMode;
 
 global gsig;
 global gamp;
@@ -713,18 +765,39 @@ global ep;
 global img;
 global BlackL;
 global median;
+global gsaturation;
+global gbeta;
 
 if( isProcessed == 0 )
     isProcessed = 2;
     set(handles.textProcess,'Visible','on');
-    pause(0);
+    pause(0.0);
 
-    rcn = PoissonFilter(double(img), gsig, gamp, glpf, ith, iamp, median, BlackL, ep, Param);        
+%    rcn = PoissonFilter(double(img), gsig, gamp, glpf, ith, iamp, median, BlackL, ep, Param);
+
+    
+    [rcn, Param, dx, dy, dstGry, lpfGry, ker, crm] = PoissonFilter(double(img), gsig, gamp, glpf, ith, iamp, median, BlackL, ep, gsaturation, Param );
+    [rcn2, gry] = dxdy2imgMinMax( dx, dy, dstGry, lpfGry, ker, ep, gbeta, crm );
+    
+    %{
+    crm = imguidedfilter(crm, gry, 'DegreeOfSmooth', 0.2^2);
+    rcn2 = bsxfun(@times, crm, dstGry);
+    %}
+    
+    if( viewMode == 0 )
+        viewMode = 1;
+    end
+    
     axes(handles.axes1);
-    imshow(uint8(rcn));
+    if( viewMode == 1 )
+        imshow(uint8(rcn));
+        str = 'Pro1 W/O';
+    else
+        imshow(uint8(rcn2));
+        str = 'Pro2 W';
+    end
 
-    set(handles.textImageTitle,'String','Processed');
-    set(handles.togglebuttonOrg,'Value',0);
+    set(handles.textImageTitle,'String',str);
     
     set(handles.textProcess,'Visible','off');
     pause(0.0);
@@ -867,6 +940,16 @@ if( filename ~= 0 )
     set(handles.sliderEp,'Value',ep);
     set(handles.editEp,'String',sprintf('%3.2e',ep));
     
+    global gsaturation;
+    gsaturation = xls(9);
+    set(handles.sliderSaturation,'Value',gsaturation);
+    set(handles.editSaturation,'String',sprintf('%4.2f',gsaturation));
+    
+    global gbeta;
+    gbeta = xls(10);
+    set(handles.sliderBeta,'Value',gbeta);
+    set(handles.editBeta,'String',sprintf('%4.2f',gbeta));
+    
     global isProcessed;
     while( isProcessed > 0 )
         pause(0.2);
@@ -925,5 +1008,163 @@ if( filename ~= 0 )
  xls{i,2} = ep;
  i = i + 1;
  
+ global gsaturation;
+ xls{i,1} = 'Saturation';
+ xls{i,2} = gsaturation;
+ i = i + 1;
+
+ global gbeta;
+ xls{i,1} = 'Beta';
+ xls{i,2} = gbeta;
+ i = i + 1;
+ 
  xlswrite( [dirpath,filename], xls );
 end
+
+
+% --- Executes on button press in checkRangeConstraint.
+function checkRangeConstraint_Callback(hObject, eventdata, handles)
+% hObject    handle to checkRangeConstraint (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of checkRangeConstraint
+global viewMode;
+
+rangeConstraint = get(hObject, 'Value');
+
+if( rangeConstraint == 0 && viewMode == 2 )
+    viewMode = 1;
+end
+
+performDraw(handles);
+
+
+
+function editSaturation_Callback(hObject, eventdata, handles)
+% hObject    handle to editSaturation (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of editSaturation as text
+%        str2double(get(hObject,'String')) returns contents of editSaturation as a double
+global gsaturation;
+gsaturation = str2double(get(hObject,'String'));
+set(handles.sliderSaturation,'Value', gsaturation );
+performDraw(handles);
+
+% --- Executes during object creation, after setting all properties.
+function editSaturation_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to editSaturation (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+global gsaturation;
+gsaturation = 1;
+set(hObject,'String',sprintf('%4.2f',gsaturation));
+
+
+% --- Executes on slider movement.
+function sliderSaturation_Callback(hObject, eventdata, handles)
+% hObject    handle to sliderSaturation (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+global gsaturation;
+gsaturation = get(hObject,'Value');
+if( gsaturation < get(hObject,'Min') )
+    gsaturation = get(hObject,'Min');
+end
+if( gsaturation > get(hObject,'Max') )
+    gsaturation = get(hObject,'Max');
+end
+set(handles.editSaturation,'String',sprintf('%4.2f',gsaturation));
+performDraw(handles);
+
+% --- Executes during object creation, after setting all properties.
+function sliderSaturation_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sliderSaturation (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
+global gsaturation;
+gsaturation = 1;
+sMin = 0;
+sMax = 2;
+sStep1 = 0.02 / (sMax-sMin);
+sStep2 = sStep1*10;
+set(hObject,'Value', gsaturation, 'Min', sMin, 'Max', sMax );
+set(hObject, 'SliderStep', [sStep1, sStep2]);
+
+
+% --- Executes on slider movement.
+function sliderBeta_Callback(hObject, eventdata, handles)
+% hObject    handle to sliderBeta (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+global gbeta;
+gbeta = get(hObject,'Value');
+if( gbeta < get(hObject,'Min') )
+    gbeta = get(hObject,'Min');
+end
+if( gbeta > get(hObject,'Max') )
+    gbeta = get(hObject,'Max');
+end
+set(handles.editBeta,'String',sprintf('%4.2f',gbeta));
+performDraw(handles);
+
+% --- Executes during object creation, after setting all properties.
+function sliderBeta_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sliderBeta (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
+global gbeta;
+gbeta = 0;
+sMin = 0;
+sMax = 2;
+sStep1 = 0.02 / (sMax-sMin);
+sStep2 = sStep1*10;
+set(hObject,'Value', gbeta, 'Min', sMin, 'Max', sMax );
+set(hObject, 'SliderStep', [sStep1, sStep2]);
+
+
+
+function editBeta_Callback(hObject, eventdata, handles)
+% hObject    handle to editBeta (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+global gbeta;
+gbeta = str2double(get(hObject,'String'));
+set(handles.sliderBeta,'Value', gbeta );
+performDraw(handles);
+
+
+% --- Executes during object creation, after setting all properties.
+function editBeta_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to editBeta (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+global gbeta;
+gbeta = 0;
+set(hObject,'String',sprintf('%4.2f',gbeta));
